@@ -1,1 +1,1 @@
-package beyondts_go
+package main
