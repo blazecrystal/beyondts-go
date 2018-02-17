@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"github.com/blazecrystal/beyondts-go/utils"
 	"github.com/blazecrystal/beyondts-go/properties"
+	"github.com/blazecrystal/beyondts-go/utils"
 )
 
 const (

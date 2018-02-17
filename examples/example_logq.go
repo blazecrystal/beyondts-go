@@ -1,4 +1,4 @@
-package examples
+package main
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 
 func main() {
 	os.Setenv("user.dir", "D:\\workspaces\\workspace-go\\beyondts")
-	logq.Go("D:\\workspaces\\workspace-go\\beyondts\\src\\beyondts\\examples\\logq.properties")
+	logq.Go("D:\\workspaces\\workspace-go\\beyondts\\src\\github.com\\blazecrystal\\beyondts-go\\examples\\logq.properties")
 	defer logq.End()
 	count := 1000
 	start := time.Now()
