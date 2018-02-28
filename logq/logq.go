@@ -49,12 +49,12 @@ func getLogger(name string) *Logger {
 	logger := logQ.loggers[name]
 	if logger == nil {
 		// not found current logger, found upper level
-		indexOfDot := strings.Index(name, ".")
-		debugMsg("logger named \"", name, "\" not found, continue to find its super logger named \"", name[0:indexOfDot], "\"")
-		if indexOfDot > 0 {
-			name = name[0:indexOfDot]
+		indexOfSept := strings.LastIndex(name, "/")
+		if indexOfSept > 0 {
+			name = name[0:indexOfSept]
+			debugMsg("logger named \"", name, "\" not found, continue to find its super logger named \"", name, "\"")
 			logger = getLogger(name)
-			debugMsg("logger named \"", name, "\" found")
+			debugMsg("logger named \"", logger.name, "\" found")
 		} else {
 			debugMsg("logger named \"", name, "\" and its super loggers not found, using \"default\" logger")
 			logger = logQ.loggers[DEFAULT_LOGGER]

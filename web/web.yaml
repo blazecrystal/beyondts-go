@@ -1,0 +1,14 @@
+web:
+  context: /test
+  port: 9080
+  servlet:
+    aa:
+      pattern: /test/aa/*
+      params:
+        a: 123
+        b: 456
+    bb:
+      pattern: /test/bb/*
+      params:
+        d: abc
+        e: def

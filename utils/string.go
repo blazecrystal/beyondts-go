@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 	"fmt"
+	"encoding/base64"
+	"encoding/hex"
 )
 
 var (
@@ -137,4 +139,23 @@ func DecInt2HexString(dec int) string {
 		hexBytes[i], hexBytes[len(hexBytes)-1-i] = hexBytes[len(hexBytes)-1-i], hexBytes[i]
 	}
 	return string(hexBytes)
+}
+
+func Bytes2String(data []byte, base64Encoding bool) string {
+	if base64Encoding {
+		return base64.StdEncoding.EncodeToString(data)
+	} else {
+		return strings.ToUpper(hex.EncodeToString(data))
+	}
+}
+
+func String2Bytes(data string, base64Encoding bool) ([]byte, error) {
+	var tmp []byte
+	var err error
+	if base64Encoding {
+		tmp, err = base64.StdEncoding.DecodeString(data)
+	} else {
+		tmp, err = hex.DecodeString(data)
+	}
+	return tmp, err
 }

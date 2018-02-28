@@ -14,10 +14,10 @@ func main() {
 	os.Setenv("user.dir", "D:\\workspaces\\workspace-go\\beyondts")
 	logq.Go("D:\\workspaces\\workspace-go\\beyondts\\src\\github.com\\blazecrystal\\beyondts-go\\examples\\logq.properties")
 	defer logq.End()
-	count := 1000
+	count := 1
 	start := time.Now()
 	for ; count > 0; count-- {
-		logq.GetLogger("test2.abc").Debug("aaaa----", strconv.Itoa(count))
+		logq.GetLogger("test2/abc/dd").Debug("aaaa----", strconv.Itoa(count))
 		//logq.GetLogger("test2").Error(io.EOF, "aaaa----", strconv.Itoa(count))
 	}
 	fmt.Println(time.Since(start))
