@@ -7,8 +7,8 @@ import (
 )
 
 func TestSaveKeyPair(t *testing.T) {
-    r := NewRsaInstance()
-    err := r.GenKeyPair(KEY_LENGTH_RSA1024)
+    r := NewRSAInstance()
+    err := r.GenKeyPair(KEY_LENGTH_1024)
     if err != nil {
         fmt.Println(err)
         panic(err)
@@ -22,8 +22,8 @@ func TestSaveKeyPair(t *testing.T) {
 
 func TestCryption(t *testing.T) {
     src := "123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"
-    r := NewRsaInstance()
-    err := r.GenKeyPair(KEY_LENGTH_RSA1024)
+    r := NewRSAInstance()
+    err := r.GenKeyPair(KEY_LENGTH_1024)
     if err != nil {
         fmt.Println(err)
         panic(err)
@@ -58,7 +58,7 @@ func TestCryption(t *testing.T) {
     err = r.VerifyString(src, sign, true)
     fmt.Println("verified with base64 :", err == nil)
     fmt.Println("==========================")
-    r = NewRsaInstance()
+    r = NewRSAInstance()
     err = r.LoadPublicKey("d:\\pubKey.pem")
     if err != nil {
         fmt.Println(err)
@@ -78,8 +78,8 @@ func TestCryption(t *testing.T) {
     }
     fmt.Println("decrypted from saved prikey is correct :", strings.EqualFold(src, src2))
     fmt.Println("=============key length : 2048==============")
-    r = NewRsaInstance()
-    r.GenKeyPair(KEY_LENGTH_RSA2048)
+    r = NewRSAInstance()
+    r.GenKeyPair(KEY_LENGTH_2048)
     base64, err = r.EncryptString(src, true)
     if err != nil {
         fmt.Println(err)

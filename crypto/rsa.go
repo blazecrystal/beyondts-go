@@ -13,24 +13,16 @@ import (
     "bytes"
 )
 
-const (
-    KEY_LENGTH_RSA1024 = 1024
-    KEY_LENGTH_RSA2048 = 2048
-
-    MAX_ENCRYPT_BLOCK = 117
-    MAX_DECRYPT_BLOCK = 128
-)
-
-type Rsa struct {
+type RSA struct {
     priKey *rsa.PrivateKey
     pubKey *rsa.PublicKey
 }
 
-func NewRsaInstance() *Rsa {
-    return &Rsa{}
+func NewRSAInstance() *RSA {
+    return &RSA{}
 }
 
-func (r *Rsa) GenKeyPair(keyLength int) error {
+func (r *RSA) GenKeyPair(keyLength int) error {
     priKey, err := rsa.GenerateKey(rand.Reader, keyLength)
     if err != nil {
         return err
@@ -40,7 +32,7 @@ func (r *Rsa) GenKeyPair(keyLength int) error {
     return err
 }
 
-func (r *Rsa) EncryptString(src string, base64Encoding bool) (string, error) {
+func (r *RSA) EncryptString(src string, base64Encoding bool) (string, error) {
     tmp, err := r.Encrypt([]byte(src))
     if err != nil {
         return "", err
@@ -48,7 +40,7 @@ func (r *Rsa) EncryptString(src string, base64Encoding bool) (string, error) {
     return utils.Bytes2String(tmp, base64Encoding), err
 }
 
-func (r *Rsa) DecryptString(encrypted string, base64Encoding bool) (string, error) {
+func (r *RSA) DecryptString(encrypted string, base64Encoding bool) (string, error) {
     tmp, err := utils.String2Bytes(encrypted, base64Encoding)
     if err != nil {
         return "", err
@@ -57,7 +49,7 @@ func (r *Rsa) DecryptString(encrypted string, base64Encoding bool) (string, erro
     return string(tmp), err
 }
 
-func (r *Rsa) Encrypt(src []byte) ([]byte, error) {
+func (r *RSA) Encrypt(src []byte) ([]byte, error) {
     buf := bytes.Buffer{}
     maxBlockSize := len(r.pubKey.N.Bytes()) - 11
     times := len(src) / maxBlockSize
@@ -81,7 +73,7 @@ func (r *Rsa) Encrypt(src []byte) ([]byte, error) {
     return buf.Bytes(), err
 }
 
-func (r *Rsa) Decrypt(encrypted []byte) ([]byte, error) {
+func (r *RSA) Decrypt(encrypted []byte) ([]byte, error) {
     buf := bytes.Buffer{}
     maxBlockSize := len(r.pubKey.N.Bytes())
     times := len(encrypted) / maxBlockSize
@@ -97,7 +89,7 @@ func (r *Rsa) Decrypt(encrypted []byte) ([]byte, error) {
     return buf.Bytes(), err
 }
 
-func (r *Rsa) SignString(src string, base64Encoding bool) (string, error) {
+func (r *RSA) SignString(src string, base64Encoding bool) (string, error) {
     tmp, err := r.Sign([]byte(src))
     if err != nil {
         return "", err
@@ -105,7 +97,7 @@ func (r *Rsa) SignString(src string, base64Encoding bool) (string, error) {
     return utils.Bytes2String(tmp, base64Encoding), err
 }
 
-func (r *Rsa) VerifyString(src, sign string, base64Encoding bool) error {
+func (r *RSA) VerifyString(src, sign string, base64Encoding bool) error {
     tmp, err := utils.String2Bytes(sign, base64Encoding)
     if err != nil {
         return err
@@ -113,29 +105,29 @@ func (r *Rsa) VerifyString(src, sign string, base64Encoding bool) error {
     return r.Verify([]byte(src), tmp)
 }
 
-func (r *Rsa) Sign(src []byte) ([]byte, error) {
+func (r *RSA) Sign(src []byte) ([]byte, error) {
     return r.Sign2(src, crypto.SHA256)
 }
 
-func (r *Rsa) Sign2(src []byte, hash crypto.Hash)  ([]byte, error) {
+func (r *RSA) Sign2(src []byte, hash crypto.Hash)  ([]byte, error) {
     h := hash.New()
     h.Write(src)
     hashed := h.Sum(nil)
     return rsa.SignPKCS1v15(rand.Reader, r.priKey, hash, hashed)
 }
 
-func (r *Rsa) Verify(src, sign []byte) error {
+func (r *RSA) Verify(src, sign []byte) error {
     return r.Verify2(src, sign, crypto.SHA256)
 }
 
-func (r *Rsa) Verify2(src, sign []byte, hash crypto.Hash) error {
+func (r *RSA) Verify2(src, sign []byte, hash crypto.Hash) error {
     h := hash.New()
     h.Write(src)
     hashed := h.Sum(nil)
     return rsa.VerifyPKCS1v15(r.pubKey, hash, hashed, sign)
 }
 
-func (r *Rsa) SaveKeyPair(pubKeyFile, priKeyFile string) error {
+func (r *RSA) SaveKeyPair(pubKeyFile, priKeyFile string) error {
     err := r.SavePublicKey(pubKeyFile)
     if err != nil {
         return err
@@ -144,7 +136,7 @@ func (r *Rsa) SaveKeyPair(pubKeyFile, priKeyFile string) error {
     return err
 }
 
-func (r *Rsa) SavePublicKey(pubKeyFile string) error {
+func (r *RSA) SavePublicKey(pubKeyFile string) error {
     pubKeyBytes, err := x509.MarshalPKIXPublicKey(&(r.priKey).PublicKey)
     if err != nil {
         return err
@@ -159,7 +151,7 @@ func (r *Rsa) SavePublicKey(pubKeyFile string) error {
     return err
 }
 
-func (r *Rsa) SavePrivateKey(priKeyFile string) error {
+func (r *RSA) SavePrivateKey(priKeyFile string) error {
     priKeyBytes, err := x509.MarshalPKCS8PrivateKey(r.priKey)
     block := &pem.Block{Type:"PRIVATE-KEY", Bytes:priKeyBytes}
     file, err := os.Create(priKeyFile)
@@ -171,7 +163,7 @@ func (r *Rsa) SavePrivateKey(priKeyFile string) error {
     return err
 }
 
-func (r *Rsa) LoadKeyPair(pubKeyFile, priKeyFile string) error {
+func (r *RSA) LoadKeyPair(pubKeyFile, priKeyFile string) error {
     err := r.LoadPublicKey(pubKeyFile)
     if err != nil {
         return err
@@ -180,7 +172,7 @@ func (r *Rsa) LoadKeyPair(pubKeyFile, priKeyFile string) error {
     return err
 }
 
-func (r *Rsa) LoadPublicKey(pubKeyFile string) error {
+func (r *RSA) LoadPublicKey(pubKeyFile string) error {
     pubKeyBytes, err := ioutil.ReadFile(pubKeyFile)
     if err != nil {
         return err
@@ -197,7 +189,7 @@ func (r *Rsa) LoadPublicKey(pubKeyFile string) error {
     return err
 }
 
-func (r *Rsa) LoadPrivateKey(priKeyFile string) error {
+func (r *RSA) LoadPrivateKey(priKeyFile string) error {
     priKeyBytes, err := ioutil.ReadFile(priKeyFile)
     if err != nil {
         return err

@@ -6,11 +6,13 @@ import (
 )
 
 const (
-    KEY_LENGTH_DES = 8
-    KEY_LENGTH_3DES = KEY_LENGTH_DES * 3
-    KEY_LENGTH_AES128 = KEY_LENGTH_DES * 16
-    KEY_LENGTH_AES192 = KEY_LENGTH_DES * 24
-    KEY_LENGTH_AES256 = KEY_LENGTH_DES * 32
+    KEY_LENGTH = 8
+    KEY_LENGTH_24 = KEY_LENGTH * 3
+    KEY_LENGTH_128 = KEY_LENGTH * 16
+    KEY_LENGTH_192 = KEY_LENGTH * 24
+    KEY_LENGTH_256 = KEY_LENGTH * 32
+    KEY_LENGTH_1024 = KEY_LENGTH * 128
+    KEY_LENGTH_2048 = KEY_LENGTH * 256
 )
 
 func encrypt(block cipher.Block, src, key, iv []byte) []byte {
@@ -54,6 +56,14 @@ func genBytes(originalBytes []byte, length int) []byte {
         }
     }
     return tmp
+}
+
+func genKey(key []byte, keyLength int) []byte {
+    if keyLength != KEY_LENGTH_128 && keyLength != KEY_LENGTH_192 && keyLength != KEY_LENGTH_256 {
+        keyLength = KEY_LENGTH_128
+    }
+    tmp := keyLength / KEY_LENGTH
+    return genBytes(key, tmp)
 }
 
 
