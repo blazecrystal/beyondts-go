@@ -4,11 +4,8 @@ import (
 	"bytes"
 	"math/rand"
 	"strconv"
-	"strings"
 	"time"
 	"fmt"
-	"encoding/base64"
-	"encoding/hex"
 )
 
 var (
@@ -109,53 +106,4 @@ func SliceAtoi(strSlice []string) ([]int, error) {
 		tmp[i] = int(num)
 	}
 	return tmp, nil
-}
-
-func HexString2DecInt(hex string) int {
-	rst := 0
-	for i := 0; i < len(hex); i++ {
-		num := IndexInSlice(HEX, strings.ToUpper(hex[i:i+1]))
-		times := 1
-		for j := i; j < len(hex)-1; j++ {
-			times *= 16
-		}
-		rst += num * times
-	}
-	return rst
-}
-
-func DecInt2HexString(dec int) string {
-	var tmp bytes.Buffer
-	current := dec
-	div, mod := dec, 0
-	for div > 0 {
-		mod, div = current%16, current/16
-		tmp.WriteString(HEX[mod])
-		current = div
-	}
-	hexBytes := tmp.Bytes()
-	internal := len(hexBytes) / 2
-	for i := 0; i < internal; i++ {
-		hexBytes[i], hexBytes[len(hexBytes)-1-i] = hexBytes[len(hexBytes)-1-i], hexBytes[i]
-	}
-	return string(hexBytes)
-}
-
-func Bytes2String(data []byte, base64Encoding bool) string {
-	if base64Encoding {
-		return base64.StdEncoding.EncodeToString(data)
-	} else {
-		return strings.ToUpper(hex.EncodeToString(data))
-	}
-}
-
-func String2Bytes(data string, base64Encoding bool) ([]byte, error) {
-	var tmp []byte
-	var err error
-	if base64Encoding {
-		tmp, err = base64.StdEncoding.DecodeString(data)
-	} else {
-		tmp, err = hex.DecodeString(data)
-	}
-	return tmp, err
 }

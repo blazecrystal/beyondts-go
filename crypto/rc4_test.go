@@ -20,4 +20,16 @@ func TestRC4(t *testing.T) {
         fmt.Println(err)
     }
     fmt.Println("decrypted :", strings.EqualFold(dec, src))
+
+    r, err = NewRC4Instance3(key, key)
+    if err != nil {
+        fmt.Println(err)
+    }
+    enc = r.EncryptString(src, true)
+    fmt.Println("encrypted :", enc)
+    dec, err = r.DecryptString(enc, true)
+    if err != nil {
+        fmt.Println(err)
+    }
+    fmt.Println("decrypted :", strings.EqualFold(dec, src))
 }

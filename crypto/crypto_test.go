@@ -49,7 +49,7 @@ func TestTriDESCryptString(t *testing.T) {
 }
 
 func TestAESCryptString(t *testing.T) {
-    src := "123456"
+    src := "1234567890123456"
     key := "12345678abcdefgh!@#$%^&*"
     //fmt.Println("src :", []byte(src))
     //fmt.Println("key :", []byte(key))

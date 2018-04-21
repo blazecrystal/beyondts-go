@@ -14,6 +14,7 @@ var (
     SHA1 = sha1.New()
     SHA256 = sha256.New()
     SHA512 = sha512.New()
+    CHINA_SM3 = NewSM3()
 )
 
 func Digest(hash hash.Hash, src []byte) []byte {

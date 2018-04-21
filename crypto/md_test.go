@@ -24,4 +24,6 @@ func TestMD(t *testing.T) {
     fmt.Println("sha256 with hex :", DigestXString(SHA256, src, false))
     fmt.Println("sha512 with base64 :", DigestXString(SHA512, src, true))
     fmt.Println("sha512 with hex :", DigestXString(SHA512, src, false))
+
+    fmt.Println("sm3 :", DigestString(CHINA_SM3, src, true))
 }
