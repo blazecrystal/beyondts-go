@@ -1,128 +1,152 @@
 package logq
 
 import (
-	"os"
-	"runtime"
-	"runtime/debug"
-	"strconv"
-	"strings"
-	"time"
-	"github.com/blazecrystal/beyondts-go/utils"
-	"github.com/blazecrystal/beyondts-go/logq/appenders"
-)
-
-const (
-	unknown = "unknown"
+    "github.com/blazecrystal/beyondts-go/logq/appenders"
+    "strings"
+    "fmt"
+    "github.com/blazecrystal/beyondts-go/utils"
+    "runtime/debug"
 )
 
 var (
-	levels = []string{"debug", "info", "warn", "error", "fatal"}
+    LEVELS = []string{"debug", "info", "warn", "error", "fatal"}
+)
+
+const (
+    DEFAULT_LOGGER = "default"
+    DEFAULT_LEVEL  = "debug"
 )
 
 type Logger struct {
-	name, level string
-	appenders   []string //name of appenders
-	debugMode   bool
+    name, level string
+    as          []string
 }
 
-func createDefaultLogger() *Logger {
-	return &Logger{name: DEFAULT_LOGGER, level: levels[0], appenders: []string{DEFAULT_APPENDER}}
+func NewLogger(name, level string) *Logger {
+    return &Logger{name: name, level: level}
 }
 
-func newLogger(name, level string, debugMode bool, appenderNames ...string) *Logger {
-	return &Logger{name: name, level: level, debugMode: debugMode, appenders: appenderNames}
+func CreateDefaultLogger() *Logger {
+    return &Logger{name: DEFAULT_LOGGER, level: DEFAULT_LEVEL, as: []string{appenders.DEFAULT_APPENDER}}
 }
 
-func (l *Logger) update(name, level string, appenderNames ...string) {
-	l.name, l.level, l.appenders = name, level, appenderNames
+func (l1 *Logger) NeedUpdate(l2 *Logger) bool {
+    return l1.getId() != l2.getId()
 }
 
-func (l *Logger) Debug(content ...interface{}) {
-	l.write(0, content...)
+func (l1 *Logger) UpdateTo(l2 *Logger) {
+    l1.level = l2.level
+    l1.as = l2.as
 }
 
-func (l *Logger) Info(content ...interface{}) {
-	l.write(1, content...)
+func (l *Logger) getId() string {
+    id := l.name + "#" + l.level
+    for _, a := range l.as {
+        id += a + "#"
+    }
+    return id
 }
 
-func (l *Logger) Warn(content ...interface{}) {
-	l.write(2, content...)
+func (l *Logger) Debug(contents ...interface{}) {
+    // content template, arg1, arg2, ..., argn, eg. Debug("abc{}def{}ghi", 11, 22)
+    if len(contents) > 0 && getLevelIndex(l.level) <= 0 {
+        for _, a := range l.as {
+            appender := getAppender(a)
+            if appender == nil {
+                break
+            }
+            appender.Write(l.name, "debug", buildContent(contents...))
+        }
+    }
 }
 
-func (l *Logger) Error(err error, content ...interface{}) {
-	l.ErrorMore(err, false, content...)
+func (l *Logger) Info(contents ...interface{}) {
+    if len(contents) > 0 && getLevelIndex(l.level) <= 1 {
+        for _, a := range l.as {
+            appender := getAppender(a)
+            if appender == nil {
+                break
+            }
+            appender.Write(l.name, "info", buildContent(contents...))
+        }
+    }
 }
 
-func (l *Logger) ErrorOnly(err error) {
-	l.ErrorMore(err, false)
+func (l *Logger) Warn(contents ...interface{}) {
+    if len(contents) > 0 && getLevelIndex(l.level) <= 2 {
+        for _, a := range l.as {
+            appender := getAppender(a)
+            if appender == nil {
+                break
+            }
+            appender.Write(l.name, "warn", buildContent(contents...))
+        }
+    }
 }
 
-func (l *Logger) ErrorMore(err error, ignoreStacks bool, content ...interface{}) {
-	msg := utils.Concat2(" ", content...)
-	if err != nil {
-		msg = utils.Concat(msg, "\n", err.Error())
-	}
-	if !ignoreStacks {
-		msg = utils.Concat(msg, "\n")
-		tmp := strings.Split(string(debug.Stack()), "\n")
-		for i, sentence := range tmp {
-			if i != 1 && i != 2 && i != 3 && i != 4 {
-				msg = utils.Concat(msg, sentence, "\n")
-			}
-		}
-	}
-	l.write(3, msg)
+func (l *Logger) Error(err error, contents ...interface{}) {
+    if len(contents) > 0 && getLevelIndex(l.level) <= 3 {
+        for _, a := range l.as {
+            appender := getAppender(a)
+            if appender == nil {
+                break
+            }
+            appender.Write(l.name, "error", buildContentWithError(err, contents...))
+        }
+    }
 }
 
-func (l *Logger) Fatal(err error, content ...interface{}) {
-	l.FatalMore(err, false, content...)
+func (l *Logger) Fatal(err error, contents ...interface{}) {
+    if len(contents) > 0 && getLevelIndex(l.level) <= 4 {
+        for _, a := range l.as {
+            appender := getAppender(a)
+            if appender == nil {
+                break
+            }
+            appender.Write(l.name, "fatal", buildContentWithError(err, contents...))
+        }
+    }
 }
 
-func (l *Logger) FatalOnly(err error) {
-	l.FatalMore(err, false)
+func getLevelIndex(level string) int {
+    for index, tmp := range LEVELS {
+        if strings.EqualFold(tmp, level) {
+            return index
+        }
+    }
+    return 99
 }
 
-func (l *Logger) FatalMore(err error, ignoreStacks bool, content ...interface{}) {
-	msg := utils.Concat2(" ", content...)
-	if err != nil {
-		msg = utils.Concat(msg, "\n", err.Error())
-	}
-	if !ignoreStacks {
-		msg = utils.Concat(msg, "\n")
-		tmp := strings.Split(string(debug.Stack()), "\n")
-		for i, sentence := range tmp {
-			if i != 1 && i != 2 && i != 3 && i != 4 {
-				msg = utils.Concat(msg, sentence, "\n")
-			}
-		}
-	}
-	l.write(4, msg)
+func buildContent(v ...interface{}) string {
+    switch v[0].(type) {
+    case string:
+        if strings.Contains(v[0].(string), "{}") {
+            x := strings.Split(v[0].(string), "{}")
+            var r string
+            for i := 0; i < len(x)-1; i++ {
+                if i+1 < len(v) {
+                    r = fmt.Sprint(r, x[i], v[i+1])
+                } else {
+                    r = fmt.Sprint(r, x[i])
+                }
+            }
+            r = fmt.Sprint(r, x[len(x)-1])
+            for i := 0; i < len(v)-len(x); i++ {
+                r = fmt.Sprint(r, v[len(x)+i])
+            }
+            return r
+        }
+        return utils.Concat(v...)
+    default:
+        return utils.Concat(v...)
+    }
 }
 
-func (l *Logger) write(levelIndex int, content ...interface{}) {
-	if utils.IndexInSlice(levels, strings.ToLower(l.level)) < levelIndex+1 {
-		fills := make(map[string]string)
-		fills[appenders.Fills_Timestamp] = time.Now().Format("2006-01-02 15:04:05.000")
-		fills[appenders.Fills_Level] = strings.ToUpper(levels[levelIndex])
-		fills[appenders.Fills_LoggerName] = l.name
-		fills[appenders.Fills_Content] = utils.Concat2(" ", content...)
-		_, file, line, ok := runtime.Caller(2) // skip Caller & current stack
-		if ok {
-			fills[appenders.Fills_LongFileName] = utils.ToLocalFilePath(file)
-			lastPathSept := strings.LastIndex(fills[appenders.Fills_LongFileName], string(os.PathSeparator))
-			fills[appenders.Fills_ShortFileName] = fills[appenders.Fills_LongFileName][lastPathSept+1:]
-			fills[appenders.Fills_LineNum] = strconv.Itoa(line)
-		} else {
-			fills[appenders.Fills_LongFileName] = unknown
-			fills[appenders.Fills_ShortFileName] = unknown
-			fills[appenders.Fills_LineNum] = unknown
-		}
-		for _, appenderName := range l.appenders {
-			go GetAppender(appenderName).WriteLog(fills)
-		}
-	}
+func buildContentWithError(err error, v ...interface{}) string {
+    return utils.Concat2("\n", buildContent(v...), err.Error(), "\n", string(debug.Stack()))
 }
 
 func (l *Logger) Print(v ...interface{}) {
-	l.Debug(v...)
+    // layout, arg1, arg2, ..., argn
+    l.Debug(v...)
 }

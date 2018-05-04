@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<logq scanPeriod="10000" debug="true">
+    <appender name="stdout" type="stdout">
+        <layout>%t% %p% [%ln%] %lf%(%n%) %c%</layout>
+    </appender>
+    <appender name="localFile" type="local_file">
+        <layout>%t% %p% [%ln%] %sf%(%n%) %c%</layout>
+        <file>${user.dir}/logs/threshold/test.log</file>
+        <rolling type="daily" threshold="1d" zip="true" keep="10" />
+        <!--<rolling type="size" threshold="100k" zip="true" keep="10" />-->
+    </appender>
+    <appender name="syslog" type="syslog">
+        <layout>%t% %p% [%ln%] %sf%(%n%) %c%</layout>
+        <server host="127.0.0.1" port="5140" />
+    </appender>
+    <appender name="database" type="database">
+        <connection driver="mysql" url="root:beyondts@tcp(127.0.0.1:3306)/test" />
+        <sql maxRidLen="32" sqlstr="insert into logs (id, logtime, level, logger, src, lineno, content) values (?, ?, ?, ?, ?, ?, ?)">
+            <param index="1">%rid%</param>
+            <param index="2">%t%</param>
+            <param index="3">%p%</param>
+            <param index="4">%ln%</param>
+            <param index="5">%sf%</param>
+            <param index="6">%n%</param>
+            <param index="7">%c%</param>
+        </sql>
+    </appender>
+    <logger name="test" level="debug">
+        <appender-ref ref="syslog" />
+    </logger>
+    <logger name="test2" level="error">
+        <!--<appender-ref ref="stdout" />-->
+        <appender-ref ref="localFile" />
+        <appender-ref ref="database" />
+    </logger>
+    <logger name="default" level="debug">
+        <appender-ref ref="stdout" />
+    </logger>
+</logq>

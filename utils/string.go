@@ -44,7 +44,7 @@ func ConcatWithSept(sept string, str ...string) string {
 	return buf.String()
 }
 
-func ExistInSliece(slice []string, str string) bool {
+func ExistInSlice(slice []string, str string) bool {
 	if slice == nil {
 		return false
 	}
@@ -106,4 +106,20 @@ func SliceAtoi(strSlice []string) ([]int, error) {
 		tmp[i] = int(num)
 	}
 	return tmp, nil
+}
+
+func Atoi(s string, dflt int) int {
+    i, err := strconv.Atoi(s)
+    if err != nil {
+        return dflt
+    }
+    return i
+}
+
+func ParseBool(s string, dflt bool) bool {
+    b, err := strconv.ParseBool(s)
+    if err != nil {
+        return dflt
+    }
+    return b
 }

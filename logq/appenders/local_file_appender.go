@@ -1,233 +1,257 @@
 package appenders
 
 import (
-	"bufio"
-	"bytes"
-	"os"
-	"strconv"
-	"strings"
-	"time"
-	"github.com/blazecrystal/beyondts-go/utils"
+    "strconv"
+    "strings"
+    "time"
+    "runtime"
+    "os"
+    "bytes"
+    "github.com/blazecrystal/beyondts-go/utils"
+    "errors"
 )
 
 const (
-	default_ugo = 0600
-	prefix_env  = "${"
-	suffix_env  = "}"
+    DEFAULT_UGO = 0600
+    PREFIX_ENV  = "${"
+    SUFFIX_ENV  = "}"
+
+    ROLLING_DAILY           = "daily"
+    ROLLING_SIZE            = "size"
+    DEFAULT_KEEP            = 5
+    DEFAULT_SIZE_THRESHOLD  = "1m"
+    DEFAULT_DAILY_THRESHOLD = "1d"
 )
 
 type LocalFileAppender struct {
-	name, layout, file, dailyRolling, threshold, zip, keep string
-	log                                                    chan string
+    name, layout, file, rollingType, threshold string
+    zip                                        bool
+    keep                                       int
+    logFile                                    *os.File
 }
 
-func NewLocalFileAppender(attrs map[string]string) *LocalFileAppender {
-	tmp := &LocalFileAppender{name: attrs["name"], layout: attrs["layout"], file: utils.ToLocalFilePath(attrs["file"]), dailyRolling: attrs["dailyRolling"], threshold: attrs["threshold"], zip: attrs["zip"], keep: attrs["keep"], log: make(chan string)}
-	return tmp
+func NewLocalFileAppender(name, layout, file, rollingType, threshold string, zip bool, keep int) (*LocalFileAppender, error) {
+    if len(file) < 1 {
+        return nil, errors.New("file not assigned : " + file)
+    }
+    file = utils.ToLocalFilePath(file)
+    logFile := openLogFile(file)
+    if logFile == nil {
+        return nil, errors.New("file not found and can't be created : " + file)
+    }
+    if rollingType != ROLLING_DAILY && rollingType != ROLLING_SIZE {
+        rollingType = ROLLING_DAILY
+    }
+    if keep < 1 {
+        keep = DEFAULT_KEEP
+    }
+    if len(layout) < 1 {
+        layout = DEFAULT_LAYOUT
+    }
+    // set all illegal threshold to ""
+    unit := threshold[len(threshold)-1:]
+    period, err := strconv.Atoi(threshold[: len(threshold)-1])
+    if err != nil || period < 1 || (rollingType == ROLLING_DAILY && (unit != "h" && unit != "d" && unit != "m" && unit != "y")) ||
+        (rollingType == ROLLING_SIZE && (unit != "b" && unit != "k" && unit != "m" && unit != "g")) {
+        threshold = ""
+    }
+    if len(threshold) < 2 {
+        switch rollingType {
+        case ROLLING_DAILY:
+            threshold = DEFAULT_DAILY_THRESHOLD
+        case ROLLING_SIZE:
+            threshold = DEFAULT_SIZE_THRESHOLD
+        }
+    }
+    return &LocalFileAppender{name: name, layout: layout, file: file, rollingType: rollingType, threshold: threshold, zip: zip, keep: keep, logFile: logFile}, nil
 }
 
-func (a *LocalFileAppender) GetType() string {
-	return Type_LocalFile
-}
-
-func (a *LocalFileAppender) WriteLog(fills map[string]string) {
-	a.log <- fillLayout(a.layout, fills)
-}
-
-func (a *LocalFileAppender) Stop() {
-	a.log <- string(CMD_END)
-}
-
-func (a *LocalFileAppender) Run(flag chan string) {
-	// open file & build writer
-	logFile, err := openLogFile(a.file)
-	defer logFile.Close()
-	if err != nil {
-		debugMsg("can't open log file : ", a.file, ", this appender will be skipped\n", err)
-		flag <- utils.Concat("-", a.name)
-		return
-	}
-	writer := bufio.NewWriter(logFile)
-	flag <- utils.Concat("+", a.name)
-	for {
-		tmp := <-a.log
-		if bytes.Equal([]byte(tmp), CMD_END) {
-			break
-		}
-		// write tmp to local file
-		// redirect to new file & backup old one
-		if a.backup(logFile) {
-			logFile, err = openLogFile(a.file)
-			defer logFile.Close()
-			if err != nil {
-				debugMsg("can't open log file : ", a.file, ", this appender will be skipped\n", err)
-				flag <- utils.Concat("-", a.name)
-				return
-			}
-			writer = bufio.NewWriter(logFile)
-		}
-		writer.WriteString(tmp)
-		writer.WriteRune('\n')
-		writer.Flush()
-	}
-
-	flag <- utils.Concat("-", a.name)
-}
-
-// if current file not opened at the end of the func
-func (a *LocalFileAppender) backup(currentFile *os.File) bool {
-	rst := false
-	if strings.EqualFold(a.dailyRolling, "true") {
-		rst = a.dailyBackup(currentFile)
-	} else if len(a.threshold) > 0 {
-		rst = a.thresholdBackup(currentFile)
-	}
-	// if not backup daily or by threshold, we do nothing
-	return rst
-}
-
-func (a *LocalFileAppender) thresholdBackup(currentFile *os.File) bool {
-	stat, err := currentFile.Stat()
-	if err != nil {
-		debugMsg("can't open log file stat", err)
-		return false
-	}
-	maxSize, err := thresholdToFileSize(a.threshold)
-	if err != nil {
-		debugMsg("illegal threshold format, threshold will never effect")
-		return false
-	}
-	if stat.Size() < maxSize {
-		return false
-	} else {
-		oldPath := currentFile.Name()
-		oldName := oldPath[strings.LastIndex(oldPath, string(os.PathSeparator))+1:]
-		maxBackup, err := strconv.Atoi(a.keep)
-		if err != nil {
-			debugMsg("parameter \"keep\" is not a valid number", err)
-			return false
-		}
-		backupLogs, err := utils.ListDir(utils.GetParentDir(currentFile), utils.Concat(oldName, ".*"), false, false)
-		if err != nil {
-			debugMsg("can't list backup log files", err)
-			return false
-		}
-		if backupLogs != nil {
-			if len(backupLogs) > maxBackup-1 { // current file hasn't been backuped
-				backupLogs = deleteOldest(backupLogs)
-			}
-			backupLogs, err = utils.SortFilesByModTime(backupLogs, false)
-			if err != nil {
-				debugMsg("some backup log file may have not exist", err)
-				return false
-			}
-			backupCount := len(backupLogs)
-			for i, backupLog := range backupLogs {
-				if strings.HasSuffix(strings.ToLower(backupLog), ".zip") {
-					utils.Rename2(backupLog, utils.Concat(oldName, ".", strconv.Itoa(backupCount-i), ".zip"))
-				} else {
-					utils.Rename2(backupLog, utils.Concat(oldName, ".", strconv.Itoa(backupCount-i)))
-				}
-			}
-		}
-		currentFile.Close()
-		needZip := a.zip == "true"
-		if needZip {
-			zipFile(oldPath, "0")
-			os.Remove(oldPath)
-		} else {
-			utils.Rename2(oldPath, utils.Concat(oldName, ".0"))
-		}
-		return true
-	}
-	return false
-}
-
-func thresholdToFileSize(threshold string) (int64, error) {
-	nums, err := utils.SliceAtoi(strings.Split(threshold, "|"))
-	if err != nil {
-		return -1, err
-	}
-	length := len(nums)
-	size := 0
-	for i, v := range nums {
-		size += v << (10 * uint(length-1-i))
-	}
-	return int64(size), nil
-}
-
-func (a *LocalFileAppender) dailyBackup(currentFile *os.File) bool {
-	stat, err := currentFile.Stat()
-	if err != nil {
-		debugMsg("can't open log file stat", err)
-		return false
-	}
-	fileTime := stat.ModTime().Format("20060102")
-	now := time.Now().Format("20060102")
-	if strings.Compare(fileTime, now) < 0 {
-		oldPath := currentFile.Name()
-		oldName := oldPath[strings.LastIndex(oldPath, string(os.PathSeparator))+1:]
-		currentFile.Close()
-		needZip := a.zip == "true"
-		if needZip {
-			zipFile(oldPath, fileTime)
-			os.Remove(oldPath)
-		} else {
-			utils.Rename2(oldPath, utils.Concat(oldName, ".", fileTime))
-		}
-		maxBackup, err := strconv.Atoi(a.keep)
-		if err != nil {
-			debugMsg("parameter \"keep\" is not a valid number", err)
-			return true
-		}
-		backupLogs, err := utils.ListDir(utils.GetParentDir2(oldPath), utils.Concat(oldName, ".*"), false, false)
-		if err != nil {
-			debugMsg("some backup log file may have not exist", err)
-			return true
-		}
-		if backupLogs != nil && len(backupLogs) > maxBackup {
-			deleteOldest(backupLogs)
-		}
-		return true
-	}
-	return false
-}
-
-func (a *LocalFileAppender) Update(attrs map[string]string) {
-	a.name, a.layout, a.file, a.dailyRolling, a.threshold, a.zip, a.keep = attrs["name"], attrs["layout"], attrs["file"], attrs["dailyRolling"], attrs["threshold"], attrs["zip"], attrs["keep"]
-}
-
-func deleteOldest(backups []string) []string {
-	if backups != nil && len(backups) > 0 {
-		index, earliestFile := utils.FindEarliest(backups)
-		os.Remove(earliestFile)
-		return append(backups[0:index], backups[index+1:]...)
-	}
-	return nil
-}
-
-func zipFile(toZipFilePath, suffix string) {
-	utils.ZipFile(utils.Concat(toZipFilePath, ".", suffix, ".zip"), toZipFilePath)
-}
-
-func openLogFile(path string) (*os.File, error) {
-	file, err := os.OpenFile(getFilepath(path), os.O_RDWR|os.O_CREATE|os.O_APPEND, default_ugo)
-	if err != nil {
-		file.Close()
-		return nil, err
-	}
-	return file, nil
+func openLogFile(path string) *os.File {
+    file, err := os.OpenFile(getFilepath(path), os.O_RDWR|os.O_CREATE|os.O_APPEND, DEFAULT_UGO)
+    if err != nil {
+        file.Close()
+        return nil
+    }
+    return file
 }
 
 func getFilepath(path string) string {
-	buf := bytes.Buffer{}
-	tmp := path
-	var prefixIndex, suffixIndex int
-	for prefixIndex, suffixIndex = strings.Index(tmp, prefix_env), strings.Index(tmp, suffix_env); prefixIndex > -1 && suffixIndex-prefixIndex > 2; prefixIndex, suffixIndex = strings.Index(tmp, prefix_env), strings.Index(tmp, suffix_env) {
-		buf.WriteString(tmp[0:prefixIndex])
-		buf.WriteString(os.Getenv(tmp[prefixIndex+2 : suffixIndex]))
-		tmp = tmp[suffixIndex+1:]
-	}
-	buf.WriteString(tmp[suffixIndex+1:])
-	return buf.String()
+    buf := bytes.Buffer{}
+    tmp := path
+    var prefixIndex, suffixIndex int
+    for prefixIndex, suffixIndex = strings.Index(tmp, PREFIX_ENV), strings.Index(tmp, SUFFIX_ENV); prefixIndex > -1 && suffixIndex-prefixIndex > 2; prefixIndex, suffixIndex = strings.Index(tmp, PREFIX_ENV), strings.Index(tmp, SUFFIX_ENV) {
+        buf.WriteString(tmp[:prefixIndex])
+        buf.WriteString(os.Getenv(tmp[prefixIndex+2: suffixIndex]))
+        tmp = tmp[suffixIndex+1: ]
+    }
+    buf.WriteString(tmp[suffixIndex+1: ])
+    return buf.String()
+}
+
+func (a *LocalFileAppender) GetName() string {
+    return a.name
+}
+
+func (a *LocalFileAppender) GetType() string {
+    return TYPE_LOCAL_FILE
+}
+
+func (a *LocalFileAppender) GetId() string {
+    return TYPE_LOCAL_FILE + "#" + a.file + "#" + a.layout + "#" + a.rollingType + "#" + a.threshold + "#" + strconv.FormatBool(a.zip) + "#" + strconv.Itoa(a.keep)
+}
+
+func (a *LocalFileAppender) Stop() {
+    if a.logFile != nil {
+        a.logFile.Close()
+    }
+}
+
+func (a *LocalFileAppender) Write(loggerName, level, content string) {
+    // rolling
+    a.rolling()
+    // write
+    a.write(a.buildLog(loggerName, level, content))
+}
+
+func (a *LocalFileAppender) write(log string) {
+    a.logFile.WriteString(log + "\n")
+}
+
+func (a *LocalFileAppender) rolling() {
+    var suffix string
+    switch a.rollingType {
+    case ROLLING_DAILY:
+        suffix = a.dailyBackupSuffix()
+    case ROLLING_SIZE:
+        suffix = a.sizeBackupSuffix()
+    }
+    if len(suffix) > 0 {
+        // need rolling
+        // delete oldest backup
+        a.deleteOldest()
+        a.backup(suffix)
+        logFile := openLogFile(a.file)
+        if logFile == nil {
+            return
+        }
+        a.logFile = logFile
+    }
+}
+
+func (a *LocalFileAppender) deleteOldest() {
+    filePath := a.logFile.Name()
+    fileName := filePath[strings.LastIndex(filePath, string(os.PathSeparator))+1:]
+    parentDir := utils.GetParentDir(a.logFile)
+    oldFiles, err := utils.ListDir(parentDir, fileName+".*", false, false)
+    if err != nil {
+        return
+    }
+    if len(oldFiles) > 0 && a.rollingType == ROLLING_SIZE {
+        oldFiles, _ = utils.SortFilesByModTime(oldFiles, false)
+        renameAllOldFiles(filePath, oldFiles)
+    }
+    if len(oldFiles) > a.keep {
+        os.Remove(oldFiles[len(oldFiles)-1])
+    }
+}
+
+func renameAllOldFiles(filePath string, oldFiles []string) {
+    // oldFiles already sorted, from 1 to n
+    for i, oldFile := range oldFiles {
+        if strings.HasSuffix(oldFile, ".zip") {
+            os.Rename(oldFile, filePath+"."+strconv.Itoa(i+2)+".zip")
+        } else {
+            os.Rename(oldFile, filePath+"."+strconv.Itoa(i+2))
+        }
+    }
+}
+
+// always return "1", if exist old files, should rename
+func (a *LocalFileAppender) sizeBackupSuffix() string {
+    stat, err := a.logFile.Stat()
+    if err != nil {
+        return ""
+    }
+    length := len(a.threshold)
+    size, _ := strconv.Atoi(a.threshold[: length-1]) // never appear error, has set when appender is created
+    switch a.threshold[length-1:] {
+    case "k":
+        size = size * 1024
+    case "m":
+        size = size * 1024 * 1024
+    case "g":
+        size = size * 1024 * 1024 * 1024
+    }
+    if stat.Size() >= int64(size) {
+        return "1"
+    }
+    return ""
+}
+
+// return suffix of backup file
+// if no need to backup, suffix will be ""
+func (a *LocalFileAppender) dailyBackupSuffix() string {
+    stat, err := a.logFile.Stat()
+    if err != nil {
+        return ""
+    }
+    length := len(a.threshold)
+    period, _ := strconv.Atoi(a.threshold[: length-1]) // never appear error, has set when appender is created
+    var fileTime, now, format string
+    switch a.threshold[length-1:] {
+    case "h":
+        format = "2006010215"
+        fileTime = stat.ModTime().Add(time.Duration(period) * time.Hour).Format(format)
+    case "d":
+        format = "20060102"
+        fileTime = stat.ModTime().AddDate(0, 0, period).Format(format)
+    case "m":
+        format = "200601"
+        fileTime = stat.ModTime().AddDate(0, period, 0).Format(format)
+    case "y":
+        format := "2006"
+        fileTime = stat.ModTime().AddDate(period, 0, 0).Format(format)
+    }
+    now = time.Now().Format(format)
+    if strings.Compare(now, fileTime) >= 0 {
+        return fileTime
+    }
+    return ""
+}
+
+func (a *LocalFileAppender) backup(suffix string) {
+    newFilePath := a.logFile.Name() + "." + suffix
+    a.logFile.Close()
+    if a.zip {
+        newFilePath += ".zip"
+        a.zipFile(newFilePath)
+        os.Remove(a.logFile.Name())
+    } else {
+        os.Rename(a.logFile.Name(), newFilePath)
+    }
+}
+
+func (a *LocalFileAppender) zipFile(zipFilePath string) {
+    utils.ZipFile(zipFilePath, a.logFile.Name())
+}
+
+func (a *LocalFileAppender) buildLog(loggerName, level, content string) string {
+    tmp := a.layout
+    tmp = strings.Replace(tmp, TIMESTAMP, time.Now().Format("2006-01-02 15:04:05.000"), -1)
+    tmp = strings.Replace(tmp, LEVEL, level, -1)
+    _, file, line, ok := runtime.Caller(2) // skip Caller & current stack
+    if ok {
+        tmp = strings.Replace(tmp, LONG_FILE_NAME, file, -1)
+        file = utils.ToLocalFilePath(file)
+        lastPathSeptIndex := strings.LastIndex(file, string(os.PathSeparator))
+        tmp = strings.Replace(tmp, SHORT_FILE_NAME, file[lastPathSeptIndex+1: ], -1)
+        tmp = strings.Replace(tmp, LINE_NUMBER, strconv.Itoa(line), -1)
+    } else {
+        tmp = strings.Replace(tmp, LONG_FILE_NAME, UNKNOWN, -1)
+        tmp = strings.Replace(tmp, SHORT_FILE_NAME, UNKNOWN, -1)
+        tmp = strings.Replace(tmp, LINE_NUMBER, UNKNOWN, -1)
+    }
+    tmp = strings.Replace(tmp, LOGGER_NAME, loggerName, -1)
+    tmp = strings.Replace(tmp, CONTENT, content, -1)
+    return tmp
 }

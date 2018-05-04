@@ -1,104 +1,118 @@
 package appenders
 
 import (
-	"bytes"
-	"database/sql"
-	"strconv"
-	"strings"
-	"github.com/blazecrystal/beyondts-go/utils"
+    "database/sql"
+    "strings"
+    "github.com/blazecrystal/beyondts-go/utils"
+    "time"
+    "runtime"
+    "os"
+    "strconv"
+    "fmt"
 )
 
-// in this appender, layout should be a correct insert sql. eg. insert into logs (logtime, level, location, logger, content) values (%d%, %p%, %sl%, %ln%, %c%)
+const (
+    DEFAULT_DRIVER      = "mysql"
+    DEFAULT_MAX_RID_LEN = 16
+)
+
 type DatabaseAppender struct {
-	name, table, columns, params, driver, url, user, pwd string
-	maxIdLen                                             int
-	log                                                  chan map[string]string
+    name, driver, url, sql string
+    maxRidLen              int
+    params                 [] string
+    con                    *sql.DB
+    stmt                   *sql.Stmt
 }
 
-func NewDatabaseAppender(attrs map[string]string) *DatabaseAppender {
-	tmp, err := strconv.Atoi(attrs["maxIdLen"])
-	if err != nil {
-		tmp = 0
-	}
-	return &DatabaseAppender{name: attrs["name"], table: attrs["table"], columns: attrs["columns"], params: attrs["params"], driver: attrs["driver"], url: attrs["url"], user: attrs["user"], pwd: attrs["pwd"], maxIdLen: tmp, log: make(chan map[string]string)}
+func NewDatabaseAppender(name, driver, url, sqlstr string, maxRidLen int, params []string) (*DatabaseAppender, error) {
+    if len(driver) < 1 {
+        driver = DEFAULT_DRIVER
+    }
+    con, err := sql.Open(driver, url)
+    if err != nil {
+        return nil, err
+    }
+    stmt, err := con.Prepare(sqlstr)
+    if err != nil {
+        return nil, err
+    }
+    return &DatabaseAppender{name: name, driver: driver, url: url, sql: sqlstr, maxRidLen: maxRidLen, params: params, con: con, stmt: stmt}, nil
 }
 
-func (a *DatabaseAppender) GetType() string {
-	return Type_Database
+func (d *DatabaseAppender) GetName() string {
+    return d.name
 }
 
-func (a *DatabaseAppender) WriteLog(fills map[string]string) {
-	a.log <- fills
+func (d *DatabaseAppender) GetType() string {
+    return TYPE_DATABASE
 }
 
-func (a *DatabaseAppender) Stop() {
-	end := make(map[string]string, 1)
-	end["END"] = string(CMD_END)
-	a.log <- end
+func (d *DatabaseAppender) GetId() string {
+    return TYPE_DATABASE + "#" + d.driver + "#" + d.url + "#" + d.sql + "#" + strings.Join(d.params, "#")
 }
 
-func (a *DatabaseAppender) Run(flag chan string) {
-	con, err := sql.Open(a.driver, a.url)
-	defer con.Close()
-	if err != nil {
-		debugMsg("can't open a database connection (driver : ", a.driver, ", url : ", a.url, ", this appender will be skipped\n", err)
-		return
-	}
-	sql := prepareSql(a.table, a.columns)
-	stmt, err := con.Prepare(sql)
-	defer stmt.Close()
-	if err != nil {
-		debugMsg("can't prepare statement of insertion (sql : ", sql, "), this appender will be skipped\n", err)
-		return
-	}
-	flag <- utils.Concat("+", a.name)
-	for {
-		tmp := <-a.log
-		if bytes.Equal([]byte(tmp["END"]), CMD_END) {
-			break
-		}
-		_, err := stmt.Exec(buildParams(a, tmp)...)
-		if err != nil {
-			debugMsg("failed to insert logs into database (sql : ", sql, "), this appender will continue with next log\n", err)
-			continue
-		}
-	}
-	flag <- utils.Concat("-", a.name)
+func (d *DatabaseAppender) Stop() {
+    if d.stmt != nil {
+        d.stmt.Close()
+    }
+    if d.con != nil {
+        d.con.Close()
+    }
 }
 
-func prepareSql(table, columns string) string {
-	cols := strings.Split(columns, " ")
-	sql := utils.Concat("insert into ", table, " (")
-	var columnList, paramList string
-	for i, col := range cols {
-		columnList = utils.Concat(columnList, strings.TrimSpace(col))
-		paramList = utils.Concat(paramList, "?")
-		if i < len(cols)-1 {
-			columnList = utils.Concat(columnList, ", ")
-			paramList = utils.Concat(paramList, ", ")
-		}
-	}
-	sql = utils.Concat(sql, columnList, ") values (", paramList, ")")
-	return sql
+func (d *DatabaseAppender) Write(loggerName, level, content string) {
+    params := d.buildLog(loggerName, level, content)
+    _, err := d.stmt.Exec(params...)
+    if err != nil {
+        fmt.Println(err)
+    }
 }
 
-func buildParams(a *DatabaseAppender, fills map[string]string) []interface{} {
-	tmp := strings.Split(a.params, " ")
-	paramList := make([]interface{}, len(tmp))
-	for i, paramName := range tmp {
-		if strings.EqualFold(paramName, RANDOM_STRING_ID) {
-			paramList[i] = utils.RandomString(a.maxIdLen)
-		} else {
-			paramList[i] = fills[strings.TrimSpace(paramName)]
-		}
-	}
-	return paramList
-}
-
-func (a *DatabaseAppender) Update(attrs map[string]string) {
-	tmp, err := strconv.Atoi(attrs["maxIdLen"])
-	if err != nil {
-		tmp = 0
-	}
-	a.name, a.table, a.columns, a.params, a.driver, a.url, a.user, a.pwd, a.maxIdLen = attrs["name"], attrs["table"], attrs["columns"], attrs["params"], attrs["driver"], attrs["url"], attrs["user"], attrs["pwd"], tmp
+func (d *DatabaseAppender) buildLog(loggerName, level, content string) []interface{} {
+    params := make([]interface{}, len(d.params))
+    var rid string
+    if d.maxRidLen > 0 {
+        rid = utils.RandomString(d.maxRidLen)
+    }
+    var lf, sf, n string
+    _, file, line, ok := runtime.Caller(2) // skip Caller & current stack
+    if ok {
+        file = utils.ToLocalFilePath(file)
+        lf = file
+        lastPathSeptIndex := strings.LastIndex(file, string(os.PathSeparator))
+        sf = file[lastPathSeptIndex+1: ]
+        n = strconv.Itoa(line)
+    } else {
+        lf = UNKNOWN
+        sf = UNKNOWN
+        n = UNKNOWN
+    }
+    for i, param := range d.params {
+        params[i] = param
+        if strings.Contains(params[i].(string), RANDOM_STRING_ID) {
+            params[i] = strings.Replace(params[i].(string), RANDOM_STRING_ID, rid, -1)
+        }
+        if strings.Contains(params[i].(string), TIMESTAMP) {
+            params[i] = strings.Replace(params[i].(string), TIMESTAMP, time.Now().Format("2006-01-02 15:04:05.000"), -1)
+        }
+        if strings.Contains(params[i].(string), LEVEL) {
+            params[i] = strings.Replace(params[i].(string), LEVEL, level, -1)
+        }
+        if strings.Contains(params[i].(string), LONG_FILE_NAME) {
+            params[i] = strings.Replace(params[i].(string), LONG_FILE_NAME, lf, -1)
+        }
+        if strings.Contains(params[i].(string), SHORT_FILE_NAME) {
+            params[i] = strings.Replace(params[i].(string), SHORT_FILE_NAME, sf, -1)
+        }
+        if strings.Contains(params[i].(string), LINE_NUMBER) {
+            params[i] = strings.Replace(params[i].(string), LINE_NUMBER, n, -1)
+        }
+        if strings.Contains(params[i].(string), LOGGER_NAME) {
+            params[i] = strings.Replace(params[i].(string), LOGGER_NAME, loggerName, -1)
+        }
+        if strings.Contains(params[i].(string), CONTENT) {
+            params[i] = strings.Replace(params[i].(string), CONTENT, content, -1)
+        }
+    }
+    return params
 }

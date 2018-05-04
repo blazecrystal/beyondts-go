@@ -22,7 +22,6 @@ func ReverseByteSlice(src []byte) {
     }
 }
 
-
 func ReverseInt8Slice(src []int8) {
     length := len(src)
     for i := 0; i < length; i++ {
@@ -31,4 +30,14 @@ func ReverseInt8Slice(src []int8) {
         }
         src[i], src[length - i - 1] = src[length - i - 1], src[i]
     }
+}
+
+// attention: returned slice is not src
+func RemoveFromSlice(src interface{}, indexToRemove int) interface{} {
+    slice := reflect.ValueOf(src)
+    length := slice.Len()
+    if indexToRemove < length && indexToRemove > -1 {
+        return reflect.AppendSlice(slice.Slice(0, indexToRemove), slice.Slice(indexToRemove + 1, length)).Interface()
+    }
+    return src
 }

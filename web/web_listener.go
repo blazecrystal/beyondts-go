@@ -2,7 +2,7 @@ package web
 
 import (
     "github.com/blazecrystal/beyondts-go/properties"
-    "github.com/blazecrystal/beyondts-go/logq"
+    "github.com/blazecrystal/beyondts-go/logq2"
     "os"
     "net/http"
     "flag"
@@ -21,7 +21,7 @@ func configAll(configFile string) {
 func CreateServlet(configFile string) {
     /*config, err := properties.LoadPropertiesFromFile(configFile)
     if err != nil {
-        logq.GetLogger(LOGGER).Fatal(err, "can't parse web config file : ", configFile)
+        logq2.GetLogger(LOGGER).Fatal(err, "can't parse web config file : ", configFile)
         os.Exit(1)
     }
     contextRoot := config.Get(WEB_CONTEXT_ROOT)

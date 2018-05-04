@@ -1,63 +1,87 @@
 package appenders
 
 import (
-	"bufio"
-	"bytes"
-	"net"
-	"github.com/blazecrystal/beyondts-go/utils"
+    "net"
+    "errors"
+    "strconv"
+    "strings"
+    "time"
+    "runtime"
+    "github.com/blazecrystal/beyondts-go/utils"
+    "os"
 )
 
 const (
-	NET_UDP = "udp"
+    NET_UDP      = "udp"
+    DEFAULT_PORT = 514
 )
 
 type SyslogAppender struct {
-	name, layout, serverIp, serverPort string
-	log                                chan string
+    name, layout, host string
+    port               int
+    con                *net.UDPConn
 }
 
-func NewSyslogAppender(attrs map[string]string) *SyslogAppender {
-	return &SyslogAppender{name: attrs["name"], layout: attrs["layout"], serverIp: attrs["serverIp"], serverPort: attrs["serverPort"], log: make(chan string)}
+func NewSyslogAppender(name, layout, host string, port int) (*SyslogAppender, error) {
+    if len(layout) < 1 {
+        layout = DEFAULT_LAYOUT
+    }
+    if len(host) < 1 {
+        return nil, errors.New("host not assigned")
+    }
+    if port < 1 {
+        port = DEFAULT_PORT
+    }
+    servAddr, err := net.ResolveUDPAddr(NET_UDP, host+":"+strconv.Itoa(port))
+    if err != nil {
+        return nil, err
+    }
+    con, err := net.DialUDP(NET_UDP, nil, servAddr)
+    if err != nil {
+        return nil, err
+    }
+    return &SyslogAppender{name: name, layout: layout, host: host, port: port, con: con}, nil
 }
 
-func (a *SyslogAppender) GetType() string {
-	return Type_Syslog
+func (s *SyslogAppender) GetName() string {
+    return s.name
 }
 
-func (a *SyslogAppender) WriteLog(fills map[string]string) {
-	a.log <- fillLayout(a.layout, fills)
+func (s *SyslogAppender) GetType() string {
+    return TYPE_SYSLOG
 }
 
-func (a *SyslogAppender) Stop() {
-	a.log <- string(CMD_END)
+func (s *SyslogAppender) GetId() string {
+    return TYPE_SYSLOG + "#" + s.layout + "#" + s.host + "#" + strconv.Itoa(s.port)
 }
 
-func (a *SyslogAppender) Run(flag chan string) {
-	servAddr, err := net.ResolveUDPAddr(NET_UDP, utils.Concat(a.serverIp, ":", a.serverPort))
-	if err != nil {
-		debugMsg("can't resolve udp address, ", a.serverIp, ":", a.serverPort, ", this appender will be skipped\n", err)
-		return
-	}
-	con, err := net.DialUDP(NET_UDP, nil, servAddr)
-	defer con.Close()
-	if err != nil {
-		debugMsg("can't create udp connection to ", a.serverIp, ":", a.serverPort, ", this appender will be skipped\n", err)
-		return
-	}
-	writer := bufio.NewWriter(con)
-	flag <- utils.Concat("+", a.name)
-	for {
-		tmp := <-a.log
-		if bytes.Equal([]byte(tmp), CMD_END) {
-			break
-		}
-		writer.WriteString(tmp)
-		writer.Flush()
-	}
-	flag <- utils.Concat("-", a.name)
-
+func (s *SyslogAppender) Stop() {
+    if s.con != nil {
+        s.con.Close()
+    }
 }
 
-func (a *SyslogAppender) Update(attrs map[string]string) {
-	a.name, a.layout, a.serverIp, a.serverPort = attrs["name"], attrs["layout"], attrs["serverIp"], attrs["serverPort"]
+func (s *SyslogAppender) Write(loggerName, level, content string) {
+    s.con.Write([]byte(s.buildLog(loggerName, level, content)))
+}
+
+func (a *SyslogAppender) buildLog(loggerName, level, content string) string {
+    tmp := a.layout
+    tmp = strings.Replace(tmp, TIMESTAMP, time.Now().Format("2006-01-02 15:04:05.000"), -1)
+    tmp = strings.Replace(tmp, LEVEL, level, -1)
+    _, file, line, ok := runtime.Caller(2) // skip Caller & current stack
+    if ok {
+        tmp = strings.Replace(tmp, LONG_FILE_NAME, file, -1)
+        file = utils.ToLocalFilePath(file)
+        lastPathSeptIndex := strings.LastIndex(file, string(os.PathSeparator))
+        tmp = strings.Replace(tmp, SHORT_FILE_NAME, file[lastPathSeptIndex+1: ], -1)
+        tmp = strings.Replace(tmp, LINE_NUMBER, strconv.Itoa(line), -1)
+    } else {
+        tmp = strings.Replace(tmp, LONG_FILE_NAME, UNKNOWN, -1)
+        tmp = strings.Replace(tmp, SHORT_FILE_NAME, UNKNOWN, -1)
+        tmp = strings.Replace(tmp, LINE_NUMBER, UNKNOWN, -1)
+    }
+    tmp = strings.Replace(tmp, LOGGER_NAME, loggerName, -1)
+    tmp = strings.Replace(tmp, CONTENT, content, -1)
+    return tmp
 }
